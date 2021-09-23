@@ -29,6 +29,8 @@ extern "C" {
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f4xx_hal.h"
+#include "lcd.h"
+#include "inputs.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -82,29 +84,6 @@ void fillProcessingBuffer();
 #define LCD_RS_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
 
-typedef struct {
-	uint8_t button_1;
-	uint8_t button_2;
-	uint32_t encoder_1;
-	uint32_t encoder_2;
-	uint8_t program;
-
-	union
-	{
-	 uint8_t     changed;      /* Allows us to refer to the flags 'en masse' */
-	 struct
-	 {
-	  uint8_t button1_changed : 1,        /* Explanation of foo */
-	          button2_changed : 1,        /* Explanation of bar */
-	          encoder1_changed : 1,     /* Unused */
-	          encoder2_changed : 1,     /* Unused */
-	          program_changed : 1,     /* Unused */
-	          spare2 : 1,     /* Unused */
-	          spare1 : 1,     /* Unused */
-	          spare0 : 1;     /* Unused */
-	 };
-	};
-} input_t;
 
 /* USER CODE END Private defines */
 
