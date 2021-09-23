@@ -1,0 +1,13 @@
+*
+
+!.gitignore
+!*/
+
+Drivers/
+Debug/
+!Makefile
+!TODO
+!*.c
+!*.h
+!*.ioc
+!*.py

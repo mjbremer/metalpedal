@@ -1,0 +1,11 @@
+Port Codebase to C using KissFFT
+Attack and Decay Detection - Noise floor?
+Heuristically decide if 30ms worth of samples is enough to run Pitch Detection on
+MIDI Library
+MIDI Circuit
+
+
+FUTURE
+Multi-peak detection for polyphony
+Endianness Trickery to avoid swizzling?
+Mono ADC to reduce memory requirement
