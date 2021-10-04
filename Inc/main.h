@@ -29,8 +29,6 @@ extern "C" {
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f4xx_hal.h"
-#include "lcd.h"
-#include "inputs.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -41,6 +39,8 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 #include <string.h>
+#include <lcd.h>
+#include <inputs.h>
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/

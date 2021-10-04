@@ -33,6 +33,10 @@ typedef struct {
 void ReadInputs(input_t* inputs);
 void HandleInputs(input_t* inputs);
 
+// Example usage
+//	  ReadInputs(&inputs);
+//	  HandleInputs(&inputs);
+
 
 #endif
 

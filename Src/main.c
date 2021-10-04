@@ -17,7 +17,6 @@
   ******************************************************************************
   */
 /* USER CODE END Header */
-
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 
@@ -43,9 +42,8 @@
 
 /* Private variables ---------------------------------------------------------*/
 I2S_HandleTypeDef hi2s2;
-I2S_HandleTypeDef hi2s3;
+DMA_HandleTypeDef hdma_i2s2_ext_tx;
 DMA_HandleTypeDef hdma_spi2_rx;
-DMA_HandleTypeDef hdma_spi3_tx;
 
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
@@ -63,7 +61,7 @@ static volatile int32_t output_buffer[2][BUFFER_SIZE_SAMPLES];
 static volatile uint8_t* volatile validpData; // points to valid (readable) input half-buffer
 static volatile uint8_t* volatile validoData; // points to valid (writable) output half-buffer
 
-static volatile uint8_t out1_INT,out2_INT,in1_INT,in2_INT; // Interrupt flags
+static volatile uint8_t inout1_INT, inout2_INT;
 
 
 /* USER CODE END PV */
@@ -71,11 +69,10 @@ static volatile uint8_t out1_INT,out2_INT,in1_INT,in2_INT; // Interrupt flags
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_DMA_Init(void);
 static void MX_I2S2_Init(void);
-static void MX_I2S3_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
@@ -150,62 +147,45 @@ void processingBlock() {
 }
 
 
-void HAL_I2S_RxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
+void HAL_I2SEx_TxRxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
 {
-	in1_INT = 1;
+	inout1_INT = 1;
 }
 
-void HAL_I2S_RxCpltCallback(I2S_HandleTypeDef *hi2s)
+void HAL_I2SEx_TxRxCpltCallback(I2S_HandleTypeDef *hi2s)
 {
-	in2_INT = 1;
+	inout2_INT = 1;
 }
 
-
-void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
+void HAL_I2S_ErrorCallback(I2S_HandleTypeDef *hi2s)
 {
-	out1_INT = 1;
-}
-
-void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s)
-{
-	out2_INT = 1;
+	Error_Handler();
 }
 
 
 void ProcessingLoop()
 {
 
-		while (!in1_INT); // wait for half callback
+		while (!inout1_INT); // wait for half callback
 		validpData = pData;
-		fillInputBuffer();
-
-		in1_INT = 0;
-
-		processingBlock();
-
-		while (!out1_INT);
 		validoData = oData;
-		fillOutputBuffer();
-
-		out1_INT = 0;
-
-		while (!in2_INT); // wait for half callback
-		validpData = &pData[DMA_BUFFER_SIZE_BYTES/2];
 		fillInputBuffer();
 
-		in2_INT = 0;
+		inout1_INT = 0;
 
 		processingBlock();
-
-		while (!out2_INT);
-		validoData = &oData[DMA_BUFFER_SIZE_BYTES/2];
 		fillOutputBuffer();
 
-		out2_INT = 0;
+		while (!inout2_INT); // wait for half callback
+		validpData = &pData[DMA_BUFFER_SIZE_BYTES/2];
+		validoData = &oData[DMA_BUFFER_SIZE_BYTES/2];
+		fillInputBuffer();
 
+		inout2_INT = 0;
+
+		processingBlock();
+		fillOutputBuffer();
 }
-
-
 
 
 
@@ -220,7 +200,6 @@ int main(void)
 {
   /* USER CODE BEGIN 1 */
   /* USER CODE END 1 */
-  
 
   /* MCU Configuration--------------------------------------------------------*/
 
@@ -229,12 +208,12 @@ int main(void)
 
   /* USER CODE BEGIN Init */
 
-  in1_INT = 0;
-  in2_INT = 0;
-  out1_INT = 0;
-  out2_INT = 0;
+  inout1_INT = 0;
+  inout2_INT = 0;
+  memset(pData,0x00,DMA_BUFFER_SIZE_BYTES);
+  memset(oData,0x00,DMA_BUFFER_SIZE_BYTES);
 
-  input_t inputs;
+//  input_t inputs;
 
   /* USER CODE END Init */
 
@@ -243,15 +222,17 @@ int main(void)
 
   /* USER CODE BEGIN SysInit */
 
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_DMA_Init();
   MX_I2S2_Init();
-  MX_I2S3_Init();
   MX_TIM1_Init();
   MX_TIM2_Init();
+  MX_DMA_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
 
@@ -260,15 +241,8 @@ int main(void)
   HAL_GPIO_WritePin(ADC_RESET_GPIO_Port, ADC_RESET_Pin, GPIO_PIN_SET);
   HAL_Delay(400);
 
-
-//  if (init_vars() != 0)
-//	  Error_Handler();
-  if (HAL_OK != HAL_I2S_Receive_DMA(&hi2s2, (uint16_t*)pData, DMA_BUFFER_SIZE))
-	  Error_Handler();// size here is the TOTAL NUMBER OF WORDS IN THE BUFFER
-  if (HAL_OK != HAL_I2S_Transmit_DMA(&hi2s3, (uint16_t*)oData, DMA_BUFFER_SIZE))
-	  Error_Handler();
-
-
+if (HAL_OK != HAL_I2SEx_TransmitReceive_DMA(&hi2s2,(uint16_t*)oData,(uint16_t*)pData,DMA_BUFFER_SIZE))
+	Error_Handler();
 
 
   /* USER CODE END 2 */
@@ -280,23 +254,13 @@ int main(void)
 
 
 	  ProcessingLoop();
-	  ReadInputs(&inputs);
-	  HandleInputs(&inputs);
+
 
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
 
-  // ---Function Call Graveyard---
-  //    //Delay 1500ms
-  //	  HAL_Delay(1500);
-  //	  // Stop DMA
-  //	  HAL_I2S_DMAStop(&hi2s2);
-  //    // Transmit processing buffer
-  //	  HAL_UART_Transmit(&huart4, (uint8_t*)processingData, DMA_HALFBUF_SIZE_STEREO_SAMPLES * 4U, 10000000U);
-  //	  // Send Current MIDI note
-  //	  MIDIon(0, (uint8_t)cur_midi, 0x7F);
   /* USER CODE END 3 */
 }
 
@@ -308,13 +272,13 @@ void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
-  RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
 
-  /** Configure the main internal regulator output voltage 
+  /** Configure the main internal regulator output voltage
   */
   __HAL_RCC_PWR_CLK_ENABLE();
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
-  /** Initializes the CPU, AHB and APB busses clocks 
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
@@ -329,7 +293,7 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  /** Initializes the CPU, AHB and APB busses clocks 
+  /** Initializes the CPU, AHB and APB buses clocks
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
@@ -339,13 +303,6 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_I2S;
-  PeriphClkInitStruct.PLLI2S.PLLI2SN = 50;
-  PeriphClkInitStruct.PLLI2S.PLLI2SR = 2;
-  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
   {
     Error_Handler();
   }
@@ -375,7 +332,7 @@ static void MX_I2S2_Init(void)
   hi2s2.Init.AudioFreq = I2S_AUDIOFREQ_44K;
   hi2s2.Init.CPOL = I2S_CPOL_LOW;
   hi2s2.Init.ClockSource = I2S_CLOCK_PLL;
-  hi2s2.Init.FullDuplexMode = I2S_FULLDUPLEXMODE_DISABLE;
+  hi2s2.Init.FullDuplexMode = I2S_FULLDUPLEXMODE_ENABLE;
   if (HAL_I2S_Init(&hi2s2) != HAL_OK)
   {
     Error_Handler();
@@ -383,40 +340,6 @@ static void MX_I2S2_Init(void)
   /* USER CODE BEGIN I2S2_Init 2 */
 
   /* USER CODE END I2S2_Init 2 */
-
-}
-
-/**
-  * @brief I2S3 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_I2S3_Init(void)
-{
-
-  /* USER CODE BEGIN I2S3_Init 0 */
-
-  /* USER CODE END I2S3_Init 0 */
-
-  /* USER CODE BEGIN I2S3_Init 1 */
-
-  /* USER CODE END I2S3_Init 1 */
-  hi2s3.Instance = SPI3;
-  hi2s3.Init.Mode = I2S_MODE_MASTER_TX;
-  hi2s3.Init.Standard = I2S_STANDARD_PHILIPS;
-  hi2s3.Init.DataFormat = I2S_DATAFORMAT_24B;
-  hi2s3.Init.MCLKOutput = I2S_MCLKOUTPUT_ENABLE;
-  hi2s3.Init.AudioFreq = I2S_AUDIOFREQ_44K;
-  hi2s3.Init.CPOL = I2S_CPOL_LOW;
-  hi2s3.Init.ClockSource = I2S_CLOCK_PLL;
-  hi2s3.Init.FullDuplexMode = I2S_FULLDUPLEXMODE_DISABLE;
-  if (HAL_I2S_Init(&hi2s3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN I2S3_Init 2 */
-
-  /* USER CODE END I2S3_Init 2 */
 
 }
 
@@ -491,7 +414,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 0;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 0;
+  htim2.Init.Period = 4294967295;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
@@ -552,10 +475,10 @@ static void MX_USART1_UART_Init(void)
 
 }
 
-/** 
+/**
   * Enable DMA controller clock
   */
-static void MX_DMA_Init(void) 
+static void MX_DMA_Init(void)
 {
 
   /* DMA controller clock enable */
@@ -565,9 +488,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream3_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream3_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream3_IRQn);
-  /* DMA1_Stream5_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+  /* DMA1_Stream4_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
 
 }
 
@@ -591,7 +514,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(ADC_RESET_GPIO_Port, ADC_RESET_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3 
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3
                           |GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
@@ -610,9 +533,9 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PD0 PD1 PD2 PD3 
+  /*Configure GPIO pins : PD0 PD1 PD2 PD3
                            PD4 PD5 PD6 PD7 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3 
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3
                           |GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -653,7 +576,7 @@ void Error_Handler(void)
   * @retval None
   */
 void assert_failed(uint8_t *file, uint32_t line)
-{ 
+{
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
      tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
